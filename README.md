@@ -165,9 +165,3 @@ tensorboard --logdir runs/
 ## 📝 License
 
 This project is provided as-is for research purposes.
-
-## 🙏 致謝
-
-基於 RLPD 框架：https://github.com/ikostrikov/rl_with_implicit_models
-
-改編自豬舍環境模擬研究專案。
