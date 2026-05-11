@@ -93,6 +93,18 @@ pig_pen_2d_rlpd/
 - `--resume_dir` - 恢復訓練的 checkpoint 目錄
 
 ### 推論測試
+### 使用預訓練模型 (推薦快速開始)
+
+本倉庫已包含 **checkpoint_350000** - 在 s42_online 訓練 35 萬步後的預訓練模型。
+
+直接運行推論測試無需訓練：
+```bash
+/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python test_rlpd_2d.py
+```
+
+自動偵測並使用最新 checkpoint 進行推論。
+
+### 推論測試
 ```bash
 /home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python test_rlpd_2d.py
 ```
