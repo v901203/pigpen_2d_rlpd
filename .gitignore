@@ -1,0 +1,61 @@
+# 虛擬環境 & 依賴
+rl_env/
+.venv
+venv
+env
+*.egg-info
+dist
+build
+
+# Python 編譯
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.c
+*.cpp
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*.swn
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Checkpoint 與模型 (太大，交由 Git LFS 或遠端存儲)
+checkpoints/
+rlpd/*/checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.orbax
+
+# 訓練日誌與臨時檔
+runs/
+logs/
+*.log
+*.tensorboard
+tensorboard/
+
+# 資料集 (若有很大的資料集)
+expert_data_large.npz
+*.npz
+!expert_data.npz  # 保留示例資料
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 其他臨時檔
+*.tmp
+*.bak
+*.backup
+.cache
