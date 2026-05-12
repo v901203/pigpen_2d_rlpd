@@ -10,7 +10,7 @@ from rlpd.agents import SACLearner
 from pig_pen_env import PigPenEnv
 
 FLAGS = flags.FLAGS
-
+# 當前最興RL模型: python test_rlpd_2d.py --checkpoint_dir checkpoints/RLPD_2D_Parallel_2026-05-11_15-12-53
 # 🌟 改成指定「專案資料夾」即可，不用指定到特定步數
 flags.DEFINE_string("checkpoint_dir", "", "Path to the run folder (e.g., checkpoints/RLPD_2D_Parallel_XXX)")
 flags.DEFINE_integer("seed", 42, "Random seed.")
@@ -100,24 +100,69 @@ def _find_default_checkpoint_dir() -> str:
 
     return best_dir
 
+
+def _find_latest_checkpoint_path() -> str:
+    """Search candidate locations and return the absolute path to the checkpoint_* directory with the largest step number.
+
+    Returns empty string when none found.
+    """
+    candidates = [
+        "checkpoints",
+        os.path.join("rlpd", "s42_online", "checkpoints"),
+        os.path.join("rlpd", "s42_online(六個移動)", "checkpoints"),
+        os.path.join("rlpd", "s42_online(固定旋轉)", "checkpoints"),
+        os.path.join("rlpd", "s42_0pretrain", "checkpoints"),
+        # also include top-level parallel runs folder
+        os.path.join("checkpoints",),
+    ]
+
+    best_path = ""
+    best_step = -1
+
+    for base in candidates:
+        if not base:
+            continue
+        abs_base = os.path.abspath(base)
+        if not os.path.isdir(abs_base):
+            continue
+
+        # walk one level deep for checkpoint_* directories
+        try:
+            for name in os.listdir(abs_base):
+                if not name.startswith("checkpoint_"):
+                    continue
+                cand = os.path.join(abs_base, name)
+                if not os.path.isdir(cand):
+                    continue
+                step = _checkpoint_step(name)
+                if step > best_step:
+                    best_step = step
+                    best_path = cand
+        except OSError:
+            continue
+
+    return os.path.abspath(best_path) if best_path else ""
+
 def main(_):
-    # 若沒指定，嘗試自動尋找可用的 checkpoint 目錄
+    # 若沒指定，嘗試自動尋找最新的 checkpoint 路徑（直接到 checkpoint_XXXXX 目錄）
     if not FLAGS.checkpoint_dir:
-        FLAGS.checkpoint_dir = _find_default_checkpoint_dir()
-        if FLAGS.checkpoint_dir:
-            print(f"\033[43m未指定 --checkpoint_dir，自動使用: {FLAGS.checkpoint_dir}\033[0m")
+        latest_ckpt = _find_latest_checkpoint_path()
+        if latest_ckpt:
+            print(f"\033[43m未指定 --checkpoint_dir，已自動找到最新 checkpoint: {latest_ckpt}\033[0m")
+        else:
+            print("\033[41m找不到可用 checkpoint。請指定 --checkpoint_dir（例如: rlpd/s42_online/checkpoints）\033[0m")
+            return
+    else:
+        # 使用者有指定，可能指定到 run 資料夾或直接到 checkpoint_XXXXX
+        abs_ckpt_dir = os.path.abspath(FLAGS.checkpoint_dir)
+        if os.path.isdir(abs_ckpt_dir) and os.path.basename(abs_ckpt_dir).startswith("checkpoint_"):
+            latest_ckpt = abs_ckpt_dir
+        else:
+            latest_ckpt = checkpoints.latest_checkpoint(abs_ckpt_dir)
 
-    if not FLAGS.checkpoint_dir:
-        print("\033[41m找不到可用 checkpoint。請指定 --checkpoint_dir（例如: rlpd/s42_online/checkpoints）\033[0m")
-        return
-
-    # 1. 尋找最新權重
-    abs_ckpt_dir = os.path.abspath(FLAGS.checkpoint_dir)
-    latest_ckpt = checkpoints.latest_checkpoint(abs_ckpt_dir)
-    
-    if latest_ckpt is None:
-        print(f"\033[41m在 {abs_ckpt_dir} 裡面找不到任何 checkpoint 存檔！\033[0m")
-        return
+        if latest_ckpt is None:
+            print(f"\033[41m在 {abs_ckpt_dir} 裡面找不到任何 checkpoint 存檔！\033[0m")
+            return
 
     # 2. 初始化 2D 環境（開畫面）
     env = PigPenEnv(render_mode="human", door_width_scale=1.0)
