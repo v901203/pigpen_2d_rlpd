@@ -26,7 +26,7 @@ flags.DEFINE_integer("start_training", int(2000), "Number of random steps before
 flags.DEFINE_boolean("checkpoint_model", True, "Save agent checkpoint.")
 flags.DEFINE_integer("utd_ratio", 1, "Update to data ratio.")
 flags.DEFINE_string("expert_data_path", "expert_data.npz", "Path to your recorded expert data.")
-flags.DEFINE_integer("num_envs", 4, "Number of parallel environments.")
+flags.DEFINE_integer("num_envs", 20, "Number of parallel environments.")
 
 # 👇 接續訓練專用參數
 flags.DEFINE_string("resume_dir", "", "Path to the old checkpoint folder to resume training.")

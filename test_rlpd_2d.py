@@ -202,8 +202,11 @@ def main(_):
         )
 
     # 5. 開始表演
+    # 5. 開始表演
     obs, _ = env.reset()
     print("\033[46m測試開始！小車將使用最新大腦進行避障。按下 Ctrl+C 可停止。\033[0m")
+    
+    episode_reward = 0.0  # 🌟 新增：用一個變數來收集整趟的總分
     
     try:
         while True:
@@ -229,9 +232,24 @@ def main(_):
             # 讓環境走一步
             obs, reward, terminated, truncated, _ = env.step(env_action)
             
+            episode_reward += reward  # 🌟 新增：每走一步，就把分數存進撲滿裡
+            
             if terminated or truncated:
-                print(f"回合結束，最終獎勵: {reward:.2f}")
+                # 判斷是撞牆死掉，還是破關拿到 1000 分大獎
+                if reward > 500:
+                    print("\033[42m🎉 太神啦！小車成功走完 8 間豬舍抵達終點！\033[0m")
+                elif reward < -10:
+                    print("\033[41m💥 碰！發生碰撞，回合提早結束。\033[0m")
+                elif truncated:
+                    print("\033[43m⏳ 跑太久了 (超過 5000 步)，強制結束。\033[0m")
+                
+                # 這裡印出的才是真正的「整趟總分」
+                print(f"👉 本回合總計累積獎勵: {episode_reward:.2f}\n")
+                
+                # 清空撲滿，準備跑下一趟
                 obs, _ = env.reset()
+                episode_reward = 0.0
+                
     except KeyboardInterrupt:
         print("\n停止測試。")
         env.close()
