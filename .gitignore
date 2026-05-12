@@ -30,9 +30,7 @@ __pycache__/
 .ipynb_checkpoints
 *.ipynb
 
-# Checkpoint 與模型 (太大，交由 Git LFS 或遠端存儲)
-checkpoints/
-rlpd/*/checkpoints/
+# Checkpoint 與模型
 *.pt
 *.pth
 *.ckpt
