@@ -119,7 +119,7 @@ class PigPenEnv(gym.Env):
         if self.render_mode == "human":
             pygame.init()
             self.window = pygame.display.set_mode((self.screen_w, self.screen_h))
-            pygame.display.set_caption("Hierarchical Nav: Inflated Costmap + RL")
+            pygame.display.set_caption("Hierarchical Nav: Full Bumper Sensors")
             self.clock = pygame.time.Clock()
         else:
             pygame.init()
@@ -129,7 +129,7 @@ class PigPenEnv(gym.Env):
         self.pen_info = [] 
         
         self._draw_static_obstacles()
-        self._build_grid_map() # 🌟 建立帶有膨脹半徑的柵格地圖
+        self._build_grid_map()
         self.global_goals = self._generate_global_goals()
         self.pigs = []
 
@@ -172,16 +172,12 @@ class PigPenEnv(gym.Env):
             pygame.draw.circle(self.obstacle_surface, (0, 255, 0, 255), (cr + self.pen_w/2, y + self.pen_h/2), self.bin_r)
 
     def _build_grid_map(self):
-        """將 Pygame 畫面轉換為供 A* 計算的柵格地圖，並加入「膨脹半徑」"""
-        self.cell_size = 10 # 提高網格解析度
+        self.cell_size = 5 
         self.cols = self.screen_w // self.cell_size
         self.rows = self.screen_h // self.cell_size
         self.grid = np.zeros((self.cols, self.rows), dtype=int)
         
-        # 🌟 1. 膨脹半徑：車長的一半再加 10 像素的安全距離
         inflation_radius = int(max(self.car_w, self.car_h) / 2)
-        
-        # 🌟 修正點：將掃描間隔從 5 改為 2，確保不會跨過厚度只有 2 的內部牆壁！
         scan_step = 2 
         
         for cx in range(self.cols):
@@ -198,20 +194,16 @@ class PigPenEnv(gym.Env):
                                 is_obs = True
                                 break
                     if is_obs: break
-                
                 self.grid[cx, cy] = 1 if is_obs else 0
 
-        # 建立視覺化的膨脹地圖 (方便你除錯看安全邊界)
         self.debug_grid_surface = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
         for cx in range(self.cols):
             for cy in range(self.rows):
                 if self.grid[cx, cy] == 1:
                     pygame.draw.rect(self.debug_grid_surface, (255, 0, 0, 30), 
                                      (cx*self.cell_size, cy*self.cell_size, self.cell_size, self.cell_size))
-                    
 
     def _get_nearest_free_cell(self, start_c):
-        """如果目標點不小心落在紅色的牆壁膨脹區內，自動幫它往外尋找最近的安全白色區域"""
         if 0 <= start_c[0] < self.cols and 0 <= start_c[1] < self.rows:
             if self.grid[start_c[0], start_c[1]] == 0: return start_c
             
@@ -222,19 +214,16 @@ class PigPenEnv(gym.Env):
             for dx, dy in [(0,1), (1,0), (0,-1), (-1,0), (1,1), (-1,-1), (1,-1), (-1,1)]:
                 nx, ny = curr[0] + dx, curr[1] + dy
                 if 0 <= nx < self.cols and 0 <= ny < self.rows:
-                    if self.grid[nx, ny] == 0:
-                        return (nx, ny)
+                    if self.grid[nx, ny] == 0: return (nx, ny)
                     if (nx, ny) not in visited:
                         visited.add((nx, ny))
                         queue.append((nx, ny))
         return start_c
 
     def _a_star(self, start_pos, goal_pos):
-        """A* 最短路徑演算法 (含防切角機制)"""
         start_c = (int(start_pos[0] // self.cell_size), int(start_pos[1] // self.cell_size))
         goal_c = (int(goal_pos[0] // self.cell_size), int(goal_pos[1] // self.cell_size))
         
-        # 容錯機制：將起點和終點從紅色危險區拉到最近的白色安全區
         start_c = self._get_nearest_free_cell(start_c)
         goal_c = self._get_nearest_free_cell(goal_c)
         
@@ -254,7 +243,6 @@ class PigPenEnv(gym.Env):
                 if 0 <= next_c[0] < self.cols and 0 <= next_c[1] < self.rows:
                     if self.grid[next_c] == 1: continue 
                     
-                    # 🌟 2. 防切角機制：如果是斜角移動，檢查左右兩側是否是牆壁夾縫
                     if dx != 0 and dy != 0:
                         if self.grid[current[0]+dx, current[1]] == 1 or self.grid[current[0], current[1]+dy] == 1:
                             continue
@@ -277,15 +265,51 @@ class PigPenEnv(gym.Env):
             curr = came_from[curr]
         path.reverse()
         
-        sampled_path = path[::4]
+        sampled_path = path[::15]
         if goal_pos not in sampled_path:
             sampled_path.append(goal_pos)
             
         return sampled_path
 
+    # ==========================================
+    # 🌟 更新所有保險桿感測器座標的函數 (前後各三個)
+    # ==========================================
+    def _update_car_points(self):
+        rad = math.radians(self.car_angle)
+        fw_x = math.sin(rad)
+        fw_y = -math.cos(rad)
+        rt_x = math.cos(rad)
+        rt_y = math.sin(rad)
+
+        # 車頭正中央 (Yellow Center)
+        self.nose_c_x = self.car_x + (self.car_h / 2) * fw_x
+        self.nose_c_y = self.car_y + (self.car_h / 2) * fw_y
+
+        # 車頭右側 (Yellow Right) - 縮2像素避免視覺超出藍色車身
+        self.nose_r_x = self.nose_c_x + (self.car_w / 2 - 2) * rt_x
+        self.nose_r_y = self.nose_c_y + (self.car_w / 2 - 2) * rt_y
+
+        # 車頭左側 (Yellow Left)
+        self.nose_l_x = self.nose_c_x - (self.car_w / 2 - 2) * rt_x
+        self.nose_l_y = self.nose_c_y - (self.car_w / 2 - 2) * rt_y
+
+        # 車尾正中央 (Green Rear Center)
+        self.rear_c_x = self.car_x - (self.car_h / 2) * fw_x
+        self.rear_c_y = self.car_y - (self.car_h / 2) * fw_y
+        
+        # 車尾右側 (Green Rear Right)
+        self.rear_r_x = self.rear_c_x + (self.car_w / 2 - 2) * rt_x
+        self.rear_r_y = self.rear_c_y + (self.car_w / 2 - 2) * rt_y
+        
+        # 車尾左側 (Green Rear Left)
+        self.rear_l_x = self.rear_c_x - (self.car_w / 2 - 2) * rt_x
+        self.rear_l_y = self.rear_c_y - (self.car_w / 2 - 2) * rt_y
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.car_x, self.car_y, self.car_angle, self.steps = self.center_x, 750.0, 0.0, 0
+        
+        self._update_car_points()
         
         self.current_goal_idx = 0
         self.local_waypoints = self._a_star((self.car_x, self.car_y), self.global_goals[self.current_goal_idx])
@@ -295,7 +319,11 @@ class PigPenEnv(gym.Env):
         else:
             self.target_pos = self.global_goals[self.current_goal_idx]
             
-        self.prev_dist = math.hypot(self.car_x - self.target_pos[0], self.car_y - self.target_pos[1])
+        is_tracking_final = (len(self.local_waypoints) == 0)
+        # 一般追蹤距離仍然以「車頭中心」或「車體中心」為基準
+        ref_x = self.nose_c_x if is_tracking_final else self.car_x
+        ref_y = self.nose_c_y if is_tracking_final else self.car_y
+        self.prev_dist = math.hypot(ref_x - self.target_pos[0], ref_y - self.target_pos[1])
         
         self.pigs = []
         pid = 0
@@ -324,40 +352,89 @@ class PigPenEnv(gym.Env):
         self.car_x += v * math.sin(rad)
         self.car_y -= v * math.cos(rad)
 
+        # 即時更新所有感測器的位置
+        self._update_car_points()
+
         car_s = pygame.Surface((self.car_w, self.car_h), pygame.SRCALPHA)
         car_s.fill((0,0,255,255))
         rot_car = pygame.transform.rotate(car_s, -self.car_angle)
         rect = rot_car.get_rect(center=(int(self.car_x), int(self.car_y)))
         is_collision = self.dynamic_mask.overlap(pygame.mask.from_surface(rot_car), (rect.x, rect.y)) is not None
 
-        dist = math.hypot(self.car_x - self.target_pos[0], self.car_y - self.target_pos[1])
+        is_tracking_final = (len(self.local_waypoints) == 0)
         
+        ref_x = self.nose_c_x if is_tracking_final else self.car_x
+        ref_y = self.nose_c_y if is_tracking_final else self.car_y
+
+        dist = math.hypot(ref_x - self.target_pos[0], ref_y - self.target_pos[1])
+        trigger_dist = 15.0 if is_tracking_final else 30.0
+
+        # 計算三個前保險桿(黃點) 到最終紅點的距離
+        dist_n_c = math.hypot(self.nose_c_x - self.target_pos[0], self.nose_c_y - self.target_pos[1])
+        dist_n_l = math.hypot(self.nose_l_x - self.target_pos[0], self.nose_l_y - self.target_pos[1])
+        dist_n_r = math.hypot(self.nose_r_x - self.target_pos[0], self.nose_r_y - self.target_pos[1])
+        min_front_dist = min(dist_n_c, dist_n_l, dist_n_r) # 只要有一個碰到就算數
+
+        # 🌟 計算三個後保險桿(綠點) 到最終紅點的距離
+        dist_r_c = math.hypot(self.rear_c_x - self.target_pos[0], self.rear_c_y - self.target_pos[1])
+        dist_r_l = math.hypot(self.rear_l_x - self.target_pos[0], self.rear_l_y - self.target_pos[1])
+        dist_r_r = math.hypot(self.rear_r_x - self.target_pos[0], self.rear_r_y - self.target_pos[1])
+        min_rear_dist = min(dist_r_c, dist_r_l, dist_r_r) # 只要有一個碰到就算數
+
+        target_ang = math.degrees(math.atan2(self.target_pos[0]-ref_x, -(self.target_pos[1]-ref_y)))
+        rel_ang_deg = (target_ang - self.car_angle + 180) % 360 - 180
+        rel_ang_norm = abs(rel_ang_deg / 180.0) 
+
+        current_global_goal = self.global_goals[self.current_goal_idx]
+        dist_to_global = math.hypot(self.car_x - current_global_goal[0], self.car_y - current_global_goal[1])
+
+        if dist_to_global < 150.0:
+            heading_penalty = rel_ang_norm * 0.05  
+        else:
+            heading_penalty = 0.0  
+
         time_penalty = 0.02
-        reward = -time_penalty + (self.prev_dist - dist) * 0.5
+        reward = -time_penalty - heading_penalty + (self.prev_dist - dist) * 0.5
         self.prev_dist = dist
-        
+
         terminated = False
+        
+        # 全新的碰撞與吃點邏輯
         if is_collision: 
             reward -= 50.0
             terminated = True
-        elif dist < 30.0:
-            if len(self.local_waypoints) > 0:
+            
+        elif is_tracking_final and min_rear_dist < trigger_dist:
+            # 🚨 致命錯誤：車尾任何一個綠點觸碰到了飼料桶紅點！
+            # 給予跟撞牆一樣的重罰，並直接結束回合
+            reward -= 50.0
+            terminated = True
+            print("🚨 警告：車尾觸碰目標！判定失敗！")
+            
+        elif (not is_tracking_final and dist < trigger_dist) or (is_tracking_final and min_front_dist < trigger_dist):
+            # 成功吃到點！
+            if not is_tracking_final:
                 self.target_pos = self.local_waypoints.pop(0)
-                reward += 10.0
+                reward += 1.0  
             else:
+                room_bonus = 20.0 * (1.0 - rel_ang_norm)
+                reward += room_bonus
+
                 self.current_goal_idx += 1
                 if self.current_goal_idx >= len(self.global_goals): 
                     reward += 1000.0
                     terminated = True
                 else:
-                    reward += 100.0
                     self.local_waypoints = self._a_star((self.car_x, self.car_y), self.global_goals[self.current_goal_idx])
                     if len(self.local_waypoints) > 0:
                         self.target_pos = self.local_waypoints.pop(0)
                     else:
                         self.target_pos = self.global_goals[self.current_goal_idx]
             
-            self.prev_dist = math.hypot(self.car_x - self.target_pos[0], self.car_y - self.target_pos[1])
+            is_tracking_final_new = (len(self.local_waypoints) == 0)
+            new_ref_x = self.nose_c_x if is_tracking_final_new else self.car_x
+            new_ref_y = self.nose_c_y if is_tracking_final_new else self.car_y
+            self.prev_dist = math.hypot(new_ref_x - self.target_pos[0], new_ref_y - self.target_pos[1])
 
         if self.render_mode == "human": self.render()
         return self._get_obs(), float(reward), terminated, self.steps>=5000, {}
@@ -382,8 +459,12 @@ class PigPenEnv(gym.Env):
             lidar.append(d_res / self.lidar_range)
             self.lidar_hits.append(hit_pos)
         
-        rel_dist = min(math.hypot(self.target_pos[0]-self.car_x, self.target_pos[1]-self.car_y)/self.screen_h, 1.0)
-        target_ang = math.degrees(math.atan2(self.target_pos[0]-self.car_x, -(self.target_pos[1]-self.car_y)))
+        is_tracking_final = (len(self.local_waypoints) == 0)
+        ref_x = self.nose_c_x if is_tracking_final else self.car_x
+        ref_y = self.nose_c_y if is_tracking_final else self.car_y
+
+        rel_dist = min(math.hypot(self.target_pos[0]-ref_x, self.target_pos[1]-ref_y)/self.screen_h, 1.0)
+        target_ang = math.degrees(math.atan2(self.target_pos[0]-ref_x, -(self.target_pos[1]-ref_y)))
         rel_ang = ((target_ang - self.car_angle + 180) % 360 - 180) / 180.0
         return np.array(lidar + [rel_dist, rel_ang], dtype=np.float32)
 
@@ -392,20 +473,24 @@ class PigPenEnv(gym.Env):
         self.window.fill((255,255,255))
         self.window.blit(self.dynamic_surface, (0,0))
         
-        # 🌟 將膨脹安全區畫在畫面上 (半透明紅色)，讓你看清楚 A* 為什麼這樣繞路
         self.window.blit(self.debug_grid_surface, (0,0)) 
         
-        # 畫出 A* 的路徑引導線 (已修復整數型別問題)
+        is_tracking_final = (len(self.local_waypoints) == 0)
+        ref_x = self.nose_c_x if is_tracking_final else self.car_x
+        ref_y = self.nose_c_y if is_tracking_final else self.car_y
+
         if len(self.local_waypoints) > 0:
             path_points = [
-                (int(self.car_x), int(self.car_y)), 
+                (int(ref_x), int(ref_y)), 
                 (int(self.target_pos[0]), int(self.target_pos[1]))
             ] + [(int(wp[0]), int(wp[1])) for wp in self.local_waypoints]
             
             pygame.draw.lines(self.window, (0, 150, 255), False, path_points, 2)
             for wp in self.local_waypoints:
                 pygame.draw.circle(self.window, (0, 150, 255), (int(wp[0]), int(wp[1])), 3)
-        
+        else:
+            pygame.draw.line(self.window, (0, 150, 255), (int(ref_x), int(ref_y)), (int(self.target_pos[0]), int(self.target_pos[1])), 2)
+
         pygame.draw.circle(self.window, (255,0,0), (int(self.target_pos[0]), int(self.target_pos[1])), 6)
             
         for hit in self.lidar_hits:
@@ -417,6 +502,20 @@ class PigPenEnv(gym.Env):
         pygame.draw.rect(car_s, (0,255,255), (0,0,self.car_w, 10))
         rot_car = pygame.transform.rotate(car_s, -self.car_angle)
         self.window.blit(rot_car, rot_car.get_rect(center=(int(self.car_x), int(self.car_y))))
+        
+        # ==========================================
+        # 🌟 視覺化感測器
+        # ==========================================
+        # 畫出 3 個黃色前保險桿感測器
+        pygame.draw.circle(self.window, (255, 255, 0), (int(self.nose_l_x), int(self.nose_l_y)), 4)
+        pygame.draw.circle(self.window, (255, 255, 0), (int(self.nose_c_x), int(self.nose_c_y)), 4)
+        pygame.draw.circle(self.window, (255, 255, 0), (int(self.nose_r_x), int(self.nose_r_y)), 4)
+        
+        # 🌟 畫出 3 個綠色後防撞感測器
+        pygame.draw.circle(self.window, (0, 255, 0), (int(self.rear_l_x), int(self.rear_l_y)), 4)
+        pygame.draw.circle(self.window, (0, 255, 0), (int(self.rear_c_x), int(self.rear_c_y)), 4)
+        pygame.draw.circle(self.window, (0, 255, 0), (int(self.rear_r_x), int(self.rear_r_y)), 4)
+        
         pygame.display.flip()
         self.clock.tick(30)
 

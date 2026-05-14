@@ -165,3 +165,7 @@ tensorboard --logdir runs/
 ## 📝 License
 
 This project is provided as-is for research purposes.
+
+source ~/Desktop/pig_pen_2d_rl/rl_env/bin/activate
+
+/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python /home/vito/Desktop/pig_pen_2d_rlpd/test_rlpd_2d.py --checkpoint_dir checkpoints/RLPD_2D_Parallel_2026-05-13_14-16-52
