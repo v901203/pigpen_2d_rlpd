@@ -1,3 +1,5 @@
+#!/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python
+
 import os
 import datetime
 import numpy as np
@@ -39,6 +41,10 @@ config_flags.DEFINE_config_file(
 )
 
 def load_expert_data(buffer, filepath):
+    """載入專家示範資料到經驗回放緩衝區
+    
+    自動適配舊版本 (38D) 與新版本 (40D) 觀測空間
+    """
     if not os.path.exists(filepath):
         print(f'\033[43m找不到專家資料 {filepath}，將進行純粹的線上探索訓練。\033[0m')
         return 0
@@ -47,6 +53,15 @@ def load_expert_data(buffer, filepath):
     obs, actions, rewards = data['obs'], data['actions'], data['rewards']
     next_obs, dones = data['next_obs'], data['dones']
     num_samples = len(obs)
+    
+    # 🔧 版本兼容：舊版本是 38D，新版本是 40D
+    # 在末尾添加 2 個零維度 (全局 GPS 信息)
+    if obs.shape[1] == 38:
+        print(f'\033[44m檢測到舊版本專家資料 (38D)，自動轉換為 40D...\033[0m')
+        obs = np.pad(obs, ((0, 0), (0, 2)), mode='constant', constant_values=0.0)
+        next_obs = np.pad(next_obs, ((0, 0), (0, 2)), mode='constant', constant_values=0.0)
+        print(f'\033[44m✅ 已轉換為 {obs.shape[1]}D 觀測\033[0m')
+    
     for i in range(num_samples):
         buffer.insert(dict(
             observations=obs[i], actions=actions[i], rewards=rewards[i],

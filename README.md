@@ -38,29 +38,64 @@ python -c "import jax, flax, pygame; print('✓ All packages loaded')"
 
 ```
 pig_pen_2d_rlpd/
-├── pig_pen_env.py              # 環境定義（2D 豬舍模擬）
+├── pig_pen_env.py              # 環境定義（模組化版本，調用 rlpd/envs 子模組）
 ├── record_expert.py            # 錄製專家示範腳本
-├── train_rlpd_2d.py            # 單機訓練腳本
 ├── train_rlpd_2d_parallel.py   # 多機並行訓練腳本
 ├── test_rlpd_2d.py             # 推論測試腳本
 ├── expert_data.npz             # 專家示範資料
 ├── configs/                    # 訓練配置檔
 │   ├── sac_config.py
-│   ├── td_config.py
+│   ├── rlpd_config.py
 │   └── ...
 ├── rlpd/                       # RLPD 框架代碼
 │   ├── agents/                 # Agent 實現 (SAC, DRQ, etc.)
 │   ├── data/                   # 資料集與 buffer
 │   ├── networks/               # 神經網路架構
+│   ├── wrappers/               # 環境包裝器
+│   ├── envs/                   # 🌟【新】模組化環境組件
+│   │   ├── __init__.py
+│   │   ├── pig.py              # 豬隻動力學（Pig 類別）
+│   │   ├── navigation.py       # 路徑規劃（A* 尋路、網格導航）
+│   │   ├── sensors.py          # 感測器（LIDAR 掃描、觀測計算）
+│   │   ├── physics.py          # 車體物理（運動學、碰撞、渲染）
+│   │   └── rewards.py          # 獎勵函數（模組化獎勵計算）
 │   └── ...
-└── checkpoints/                # 訓練模型存檔 (已追蹤，但不推送)
+└── checkpoints/                # 訓練模型存檔
 ```
+
+### 🔧 模組化架構詳解
+
+#### `rlpd/envs/pig.py`
+- **Pig 類別**：模擬豬隻的動態行為
+- 功能：隨機遊走、碰撞檢測（邊界、飼料桶、豬隻間）、繪製
+
+#### `rlpd/envs/navigation.py`
+- **NavigationGrid**：網格式碰撞圖構建與 A* 尋路
+- 函數：`generate_global_goals()`（生成 8 個房間目標）、`draw_static_obstacles()`（繪製牆壁與門）
+
+#### `rlpd/envs/sensors.py`
+- **LidarSensor**：360°LIDAR 掃描模擬（36 道射線）
+- 函數：`compute_target_observation()`（相對目標觀測）、`compute_global_goal_observation()`（全局GPS）
+
+#### `rlpd/envs/physics.py`
+- **CarPhysics**：小車運動學與碰撞檢測
+- 方法：`step()`（更新位置）、`check_collision()`、`compute_bumper_distances()`
+- 函數：`render_car()`（繪製小車與感測器）
+
+#### `rlpd/envs/rewards.py`
+- 模組化獎勵計算函數
+- 包括：距離獎勵、姿態懲罰、碰撞懲罰、完成獎勵
 
 ## 🎬 快速開始
 
+### 首次設定（讓腳本可直接執行）
+```bash
+chmod +x record_expert.py train_rlpd_2d_parallel.py test_rlpd_2d.py
+```
+
 ### 錄製專家示範
 ```bash
-/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python record_expert.py
+./record_expert.py
 ```
 操作方式：
 - **SPACE** - 開始錄製
@@ -71,7 +106,7 @@ pig_pen_2d_rlpd/
 
 ### 單機訓練
 ```bash
-/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python train_rlpd_2d.py
+./train_rlpd_2d_parallel.py --num_envs 1
 ```
 
 參數選項：
@@ -82,7 +117,7 @@ pig_pen_2d_rlpd/
 
 ### 多機並行訓練 (推薦)
 ```bash
-/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python train_rlpd_2d_parallel.py \
+./train_rlpd_2d_parallel.py \
   --max_steps 2000000 \
   --num_envs 8
 ```
@@ -98,19 +133,19 @@ pig_pen_2d_rlpd/
 
 直接運行推論測試無需訓練：
 ```bash
-/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python test_rlpd_2d.py
+./test_rlpd_2d.py
 ```
 
 腳本會自動偵測並使用最新 checkpoint 進行推論。
 
 ### 推論測試
 ```bash
-/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python test_rlpd_2d.py
+./test_rlpd_2d.py
 ```
 
 自動尋找最新 checkpoint 並進行推論。也可手動指定：
 ```bash
-/home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python test_rlpd_2d.py \
+./test_rlpd_2d.py \
   --checkpoint_dir rlpd/s42_online/checkpoints
 ```
 
@@ -169,3 +204,5 @@ This project is provided as-is for research purposes.
 source ~/Desktop/pig_pen_2d_rl/rl_env/bin/activate
 
 /home/vito/Desktop/pig_pen_2d_rl/rl_env/bin/python /home/vito/Desktop/pig_pen_2d_rlpd/test_rlpd_2d.py --checkpoint_dir checkpoints/RLPD_2D_Parallel_2026-05-13_14-16-52
+
+ python3 train_rlpd_2d_parallel.py --resume_dir checkpoints/RLPD_2D_Parallel_2026-05-13_14-16-52 --max_steps 500000000
