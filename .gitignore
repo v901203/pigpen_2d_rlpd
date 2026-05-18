@@ -34,10 +34,10 @@ __pycache__/
 *.pt
 *.pth
 *.ckpt
-*.orbax
+# *.orbax  # 允許上傳 orbax checkpoints
 
 # 訓練日誌與臨時檔
-runs/
+# runs/  # 允許上傳 runs
 logs/
 *.log
 *.tensorboard
